@@ -1,0 +1,85 @@
+trigger:
+  branches:
+    include:
+      - main
+
+variables:
+  azureServiceConnection: "technicaldevops"
+  webAppName: "demo-webapp-12345"
+  vmImageName: "ubuntu-latest"
+
+stages:
+
+# =========================
+# 🧱 BUILD STAGE
+# =========================
+- stage: Build
+  displayName: "Build Stage"
+  jobs:
+    - job: BuildApp
+      pool:
+        vmImage: $(vmImageName)
+
+      steps:
+
+        # 🔹 Install Node
+        - task: NodeTool@0
+          inputs:
+            versionSpec: "18.x"
+          displayName: "Install Node.js"
+
+        # 🔹 Build Backend
+        - script: |
+            cd backend
+            npm install
+          displayName: "Install Backend Dependencies"
+
+        # 🔹 Build Frontend
+        - script: |
+            cd frontend
+            npm install
+            npm run build
+          displayName: "Build Frontend"
+
+        # 🔹 Copy files to staging
+        - task: CopyFiles@2
+          inputs:
+            SourceFolder: "$(System.DefaultWorkingDirectory)"
+            Contents: |
+              backend/**
+              frontend/build/**
+            TargetFolder: "$(Build.ArtifactStagingDirectory)"
+
+        # 🔹 Publish artifact
+        - task: PublishBuildArtifacts@1
+          inputs:
+            pathToPublish: "$(Build.ArtifactStagingDirectory)"
+            artifactName: "drop"
+
+# =========================
+# 🚀 DEPLOY STAGE
+# =========================
+- stage: Deploy
+  displayName: "Deploy Stage"
+  dependsOn: Build
+  jobs:
+    - deployment: DeployWebApp
+      environment: "dev"
+      pool:
+        vmImage: $(vmImageName)
+
+      strategy:
+        runOnce:
+          deploy:
+            steps:
+
+              - download: current
+                artifact: drop
+
+              # 🔹 Deploy to Azure App Service
+              - task: AzureWebApp@1
+                displayName: "Deploy to Azure Web App"
+                inputs:
+                  azureSubscription: $(azureServiceConnection)
+                  appName: $(webAppName)
+                  package: "$(Pipeline.Workspace)/drop"
