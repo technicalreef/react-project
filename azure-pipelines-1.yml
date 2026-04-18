@@ -1,0 +1,74 @@
+trigger:
+  branches:
+    include:
+      - main
+
+variables:
+  tfWorkingDir: 'tfcode'
+  azureServiceConnection: 'technicaldevops'
+
+stages:
+
+# =========================
+# DEPLOY STAGE
+# =========================
+- stage: Deploy
+  displayName: Deploy Infrastructure
+  jobs:
+    - job: TerraformDeploy
+      displayName: Terraform Apply
+      pool:
+        vmImage: 'ubuntu-latest'
+
+      steps:
+        - checkout: self
+
+        - task: TerraformInstaller@1
+          displayName: Install Terraform
+          inputs:
+            terraformVersion: 'latest'
+
+        - task: AzureCLI@2
+          displayName: Terraform Init & Apply
+          inputs:
+            azureSubscription: $(azureServiceConnection)
+            scriptType: bash
+            scriptLocation: inlineScript
+            workingDirectory: $(tfWorkingDir)
+            inlineScript: |
+              terraform init
+              terraform validate
+              terraform plan -out=tfplan
+              terraform apply -auto-approve tfplan
+
+# =========================
+# DESTROY STAGE
+# =========================
+- stage: Destroy
+  displayName: Destroy Infrastructure
+  dependsOn: Deploy
+  condition: manual
+  jobs:
+    - job: TerraformDestroy
+      displayName: Terraform Destroy
+      pool:
+        vmImage: 'ubuntu-latest'
+
+      steps:
+        - checkout: self
+
+        - task: TerraformInstaller@1
+          displayName: Install Terraform
+          inputs:
+            terraformVersion: 'latest'
+
+        - task: AzureCLI@2
+          displayName: Terraform Destroy
+          inputs:
+            azureSubscription: $(azureServiceConnection)
+            scriptType: bash
+            scriptLocation: inlineScript
+            workingDirectory: $(tfWorkingDir)
+            inlineScript: |
+              terraform init
+              terraform destroy -auto-approve
