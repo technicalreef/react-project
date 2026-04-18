@@ -1,85 +1,76 @@
-trigger:
-  branches:
-    include:
-      - main
+
+#trigger:
+#  branches:
+#    include:
+#      - main
+
+parameters:
+  - name: runDestroy
+    displayName: Run Destroy Stage?
+    type: boolean
+    default: false
 
 variables:
-  azureServiceConnection: "technicaldevops"
-  webAppName: "demo-webapp-12345"
-  vmImageName: "ubuntu-latest"
+  tfWorkingDir: 'tfcode'
+  azureServiceConnection: 'technicaldevops'
 
 stages:
 
 # =========================
-# 🧱 BUILD STAGE
-# =========================
-- stage: Build
-  displayName: "Build Stage"
-  jobs:
-    - job: BuildApp
-      pool:
-        vmImage: $(vmImageName)
-
-      steps:
-
-        # 🔹 Install Node
-        - task: NodeTool@0
-          inputs:
-            versionSpec: "18.x"
-          displayName: "Install Node.js"
-
-        # 🔹 Build Backend
-        - script: |
-            cd backend
-            npm install
-          displayName: "Install Backend Dependencies"
-
-        # 🔹 Build Frontend
-        - script: |
-            cd frontend
-            npm install
-            npm run build
-          displayName: "Build Frontend"
-
-        # 🔹 Copy files to staging
-        - task: CopyFiles@2
-          inputs:
-            SourceFolder: "$(System.DefaultWorkingDirectory)"
-            Contents: |
-              backend/**
-              frontend/build/**
-            TargetFolder: "$(Build.ArtifactStagingDirectory)"
-
-        # 🔹 Publish artifact
-        - task: PublishBuildArtifacts@1
-          inputs:
-            pathToPublish: "$(Build.ArtifactStagingDirectory)"
-            artifactName: "drop"
-
-# =========================
-# 🚀 DEPLOY STAGE
+# DEPLOY STAGE
 # =========================
 - stage: Deploy
-  displayName: "Deploy Stage"
-  dependsOn: Build
+  displayName: Deploy Infrastructure
   jobs:
-    - deployment: DeployWebApp
-      environment: "dev"
+    - job: TerraformDeploy
       pool:
-        vmImage: $(vmImageName)
+        vmImage: 'ubuntu-latest'
 
-      strategy:
-        runOnce:
-          deploy:
-            steps:
+      steps:
+        - checkout: self
 
-              - download: current
-                artifact: drop
+        - task: TerraformInstaller@1
+          inputs:
+            terraformVersion: 'latest'
 
-              # 🔹 Deploy to Azure App Service
-              - task: AzureWebApp@1
-                displayName: "Deploy to Azure Web App"
-                inputs:
-                  azureSubscription: $(azureServiceConnection)
-                  appName: $(webAppName)
-                  package: "$(Pipeline.Workspace)/drop"
+        - task: AzureCLI@2
+          inputs:
+            azureSubscription: $(azureServiceConnection)
+            scriptType: bash
+            scriptLocation: inlineScript
+            workingDirectory: $(tfWorkingDir)
+            inlineScript: |
+              terraform init
+              terraform validate
+              terraform plan -out=tfplan
+              terraform apply -auto-approve tfplan
+
+# =========================
+# DESTROY STAGE
+# =========================
+- stage: Destroy
+  displayName: Destroy Infrastructure
+  dependsOn: Deploy
+  condition: and(succeeded(), eq('${{ parameters.runDestroy }}', true))
+
+  jobs:
+    - job: TerraformDestroy
+      pool:
+        vmImage: 'ubuntu-latest'
+
+      steps:
+        - checkout: self
+
+        - task: TerraformInstaller@1
+          inputs:
+            terraformVersion: 'latest'
+
+        - task: AzureCLI@2
+          inputs:
+            azureSubscription: $(azureServiceConnection)
+            scriptType: bash
+            scriptLocation: inlineScript
+            workingDirectory: $(tfWorkingDir)
+            inlineScript: |
+              terraform init
+              terraform destroy -auto-approve
