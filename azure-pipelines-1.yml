@@ -3,6 +3,12 @@ trigger:
     include:
       - main
 
+parameters:
+  - name: runDestroy
+    displayName: Run Destroy Stage?
+    type: boolean
+    default: false
+
 variables:
   tfWorkingDir: 'tfcode'
   azureServiceConnection: 'technicaldevops'
@@ -16,7 +22,6 @@ stages:
   displayName: Deploy Infrastructure
   jobs:
     - job: TerraformDeploy
-      displayName: Terraform Apply
       pool:
         vmImage: 'ubuntu-latest'
 
@@ -24,12 +29,10 @@ stages:
         - checkout: self
 
         - task: TerraformInstaller@1
-          displayName: Install Terraform
           inputs:
             terraformVersion: 'latest'
 
         - task: AzureCLI@2
-          displayName: Terraform Init & Apply
           inputs:
             azureSubscription: $(azureServiceConnection)
             scriptType: bash
@@ -47,10 +50,10 @@ stages:
 - stage: Destroy
   displayName: Destroy Infrastructure
   dependsOn: Deploy
-  condition: manual
+  condition: and(succeeded(), eq('${{ parameters.runDestroy }}', true))
+
   jobs:
     - job: TerraformDestroy
-      displayName: Terraform Destroy
       pool:
         vmImage: 'ubuntu-latest'
 
@@ -58,12 +61,10 @@ stages:
         - checkout: self
 
         - task: TerraformInstaller@1
-          displayName: Install Terraform
           inputs:
             terraformVersion: 'latest'
 
         - task: AzureCLI@2
-          displayName: Terraform Destroy
           inputs:
             azureSubscription: $(azureServiceConnection)
             scriptType: bash
