@@ -9,7 +9,7 @@ app.use(express.json());
 const config = {
   user: "adminuser",
   password: "Password@123",
-  server: "YOUR_SERVER.database.windows.net",
+  server: "demo-sql-server-12345.database.windows.net",
   database: "taskdb",
   options: {
     encrypt: true,
